@@ -17,6 +17,8 @@ export class LivePoller {
   private inflight: AbortController | null = null;
   private running = false;
   private moveTimer: number | undefined;
+  /** Whether the last request was for the whole world. */
+  private lastWasWorld = false;
 
   constructor(viewer: Viewer, onData: (resp: LiveResponse, inView: boolean) => void, onError: (err: unknown) => void) {
     this.viewer = viewer;
@@ -24,7 +26,12 @@ export class LivePoller {
     this.onError = onError;
     viewer.camera.moveEnd.addEventListener(() => {
       window.clearTimeout(this.moveTimer);
-      this.moveTimer = window.setTimeout(() => this.pollNow(), 350);
+      this.moveTimer = window.setTimeout(() => {
+        // Turning the whole globe doesn't change the data needed; only a new area does. (Re-fetching
+        // ~10,000 aircraft after every drag made phones stutter.)
+        if (this.lastWasWorld && this.bbox() === undefined) return;
+        this.pollNow();
+      }, 350);
     });
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden && this.running) this.pollNow();
@@ -75,6 +82,7 @@ export class LivePoller {
     const controller = new AbortController();
     this.inflight = controller;
     const bbox = this.bbox();
+    this.lastWasWorld = bbox === undefined;
     // The whole-world view only changes every few minutes (the world sweep), so poll it less.
     let next = bbox ? 5000 : 20000;
     try {

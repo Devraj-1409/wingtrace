@@ -9,15 +9,13 @@
     <link rel="preconnect" href="https://gibs.earthdata.nasa.gov" crossorigin />
     <link rel="preconnect" href="https://tiles.maps.eox.at" crossorigin />
     <style>
-      /* Until the stylesheet arrives: a dark page with a loading note, never raw unstyled HTML. */
+      /* Until the app is ready, a dark loading screen covers the page (never raw unstyled HTML). */
       html,
       body {
         margin: 0;
         height: 100%;
+        overflow: hidden;
         background: #05070c;
-      }
-      body > :not(#boot) {
-        visibility: hidden;
       }
       #boot {
         position: fixed;

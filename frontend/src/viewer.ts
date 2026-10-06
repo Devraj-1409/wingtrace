@@ -151,7 +151,10 @@ export function createGlobe(container: HTMLElement, creditContainer: HTMLElement
   // without the cost of full resolution).
   scene.postProcessStages.fxaa.enabled = true;
   viewer.useBrowserRecommendedResolution = false;
-  viewer.resolutionScale = Math.min(1, 1.25 / (window.devicePixelRatio || 1));
+  // Phones: one drawn pixel per CSS pixel instead of 1.25. Their small, dense screens still look
+  // sharp, and their graphics chips draw about a third fewer pixels.
+  const phone = window.matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 820;
+  viewer.resolutionScale = Math.min(1, (phone ? 1 : 1.25) / (window.devicePixelRatio || 1));
   scene.globe.tileCacheSize = 300;
 
   // From space it looks like a photo of the Earth: NASA's colours as they are, the real sun

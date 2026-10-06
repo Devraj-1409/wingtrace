@@ -56,20 +56,66 @@ const panel = new LivePanel($("#live-body"), $<HTMLInputElement>("#search"), $("
   toggleFollow: () => setFollow(!following),
 });
 
-// ---------- Phone layout: the panel is a bottom sheet that can be collapsed ----------
+// ---------- Phone layout: the panel is a bottom sheet: collapsed, half or full screen ----------
 
+type SheetState = "collapsed" | "half" | "full";
 const panelEl = $("#panel");
+const sheetHandle = $("#sheet-handle");
 
 function syncSheetHeight(): void {
   document.documentElement.style.setProperty("--sheet-height", `${panelEl.getBoundingClientRect().height}px`);
 }
 
-function setSheetCollapsed(collapsed: boolean): void {
-  panelEl.classList.toggle("collapsed", collapsed);
+function sheetState(): SheetState {
+  if (panelEl.classList.contains("collapsed")) return "collapsed";
+  return panelEl.classList.contains("full") ? "full" : "half";
+}
+
+function setSheet(state: SheetState): void {
+  panelEl.classList.toggle("collapsed", state === "collapsed");
+  panelEl.classList.toggle("full", state === "full");
+  // The map's buttons would float over a full-screen sheet.
+  document.body.classList.toggle("sheet-full", state === "full");
   requestAnimationFrame(syncSheetHeight);
 }
 
-$("#sheet-handle").addEventListener("click", () => setSheetCollapsed(!panelEl.classList.contains("collapsed")));
+// Drag the handle to resize the sheet (it snaps to the nearest size when let go);
+// tap it to switch between half and full screen.
+let sheetDrag: { startY: number; startHeight: number; moved: boolean } | null = null;
+let sheetDragEndedAt = 0;
+sheetHandle.addEventListener("pointerdown", (e) => {
+  sheetDrag = { startY: e.clientY, startHeight: panelEl.getBoundingClientRect().height, moved: false };
+  sheetHandle.setPointerCapture(e.pointerId);
+});
+sheetHandle.addEventListener("pointermove", (e) => {
+  if (!sheetDrag) return;
+  const dy = sheetDrag.startY - e.clientY;
+  if (Math.abs(dy) > 6) sheetDrag.moved = true;
+  if (!sheetDrag.moved) return;
+  panelEl.classList.add("dragging");
+  panelEl.classList.remove("collapsed");
+  panelEl.style.maxHeight = "none";
+  panelEl.style.height = `${Math.max(56, Math.min(window.innerHeight - 16, sheetDrag.startHeight + dy))}px`;
+});
+function endSheetDrag(): void {
+  if (!sheetDrag) return;
+  const { moved } = sheetDrag;
+  sheetDrag = null;
+  if (!moved) return; // a tap: handled by the click below
+  const share = panelEl.getBoundingClientRect().height / window.innerHeight;
+  panelEl.classList.remove("dragging");
+  panelEl.style.height = "";
+  panelEl.style.maxHeight = "";
+  setSheet(share < 0.25 ? "collapsed" : share < 0.7 ? "half" : "full");
+  sheetDragEndedAt = performance.now();
+}
+sheetHandle.addEventListener("pointerup", endSheetDrag);
+sheetHandle.addEventListener("pointercancel", endSheetDrag);
+sheetHandle.addEventListener("click", () => {
+  // Some browsers send a click right after a drag; that's not a tap.
+  if (performance.now() - sheetDragEndedAt < 400) return;
+  setSheet(sheetState() === "half" ? "full" : "half");
+});
 new ResizeObserver(syncSheetHeight).observe(panelEl);
 
 // ---------- Larger screens: the whole panel can be tucked away to the left ----------
@@ -97,7 +143,7 @@ try {
 const topPanel = new TopPanel($("#top-body"), (hex) => void select(hex, true));
 
 function showTab(name: string): void {
-  setSheetCollapsed(false);
+  if (sheetState() === "collapsed") setSheet("half");
   if (document.body.classList.contains("panel-closed")) setPanelOpen(true);
   document.querySelectorAll<HTMLElement>(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
   document.querySelectorAll<HTMLElement>(".tab-body").forEach((b) => (b.hidden = b.id !== `tab-${name}`));
@@ -187,6 +233,8 @@ async function select(hex: string, flyTo = false): Promise<void> {
   selected = hex;
   aircraft.select(hex);
   showTab("live");
+  // Phones: make room to see the aircraft on the globe.
+  if (sheetState() === "full") setSheet("half");
   setHash(`ac=${hex}`);
   if (!selectedDetails || selectedDetails.aircraft.hex !== hex) panel.renderLoading();
   await refreshDetails(flyTo);

@@ -27,10 +27,15 @@ const MAX_EXTRAPOLATE_LOW_S = 3 * 60;
 const MAX_EXTRAPOLATE_VERTICAL_S = 4 * 60;
 const MAX_ALT_FT = 45_000;
 const SMOOTHING_S = 1.5;
-/** Most icons moved in one frame when zoomed out (the rest wait for the next frames). */
-const PLANES_PER_FRAME = 1500;
+/**
+ * Milliseconds per frame for applying new data and moving icons; the rest waits for the next
+ * frames. A fixed time rather than a fixed count, so a phone does less per frame than a laptop.
+ */
+const FRAME_BUDGET_MS = 5;
 const GROUND_VISIBLE_BELOW_M = 400_000;
 const ICON_PX = 32;
+const EMERGENCY_COLOR = Color.fromCssColorString("#ff3b30");
+const SELECTED_COLOR = Color.WHITE;
 
 interface Plane {
   hex: string;
@@ -86,6 +91,13 @@ export class AircraftLayer {
   private lastUpdate = 0;
   /** Aircraft still to be moved in the current pass. */
   private pending: Plane[] = [];
+  /** A /api/live response still being applied, a slice per frame. */
+  private incoming: { ac: CompactAircraft[]; serverNow: number; next: number; seen: Set<string> } | null = null;
+  /**
+   * Hidden icons kept for reuse. Adding or removing even one icon makes Cesium rebuild the
+   * whole collection (thousands), so aircraft that leave hand their icon to the next ones.
+   */
+  private readonly spare: Billboard[] = [];
   private visible = true;
   private readonly scratch = new Cartesian3();
   private readonly color = new Color();
@@ -99,7 +111,7 @@ export class AircraftLayer {
   }
 
   get count(): number {
-    return this.planes.size;
+    return this.incoming ? Math.max(this.planes.size, this.incoming.ac.length) : this.planes.size;
   }
 
   setVisible(visible: boolean): void {
@@ -108,23 +120,56 @@ export class AircraftLayer {
     this.labels.show = visible;
   }
 
-  /** Apply a /api/live response: add, move and remove aircraft. */
+  /**
+   * Apply a /api/live response: add, move and remove aircraft. It's applied a slice per frame
+   * (see onFrame): thousands at once froze phones for most of a second.
+   */
   update(resp: LiveResponse): void {
     this.clock.sync(resp.now);
+    this.incoming = { ac: resp.ac, serverNow: resp.now, next: 0, seen: new Set() };
+    // Make room for newcomers in one go (one rebuild) rather than one icon at a time.
+    const missing = resp.ac.length - this.planes.size - this.spare.length;
+    if (missing > 0) this.growSpare(Math.ceil(missing * 1.1));
+  }
+
+  private applyIncoming(deadline: number): void {
+    const inc = this.incoming!;
     const now = this.clock.now();
-    const seen = new Set<string>();
-    for (const ac of resp.ac) {
-      seen.add(ac[0]);
-      this.upsert(ac, resp.now, now);
+    while (inc.next < inc.ac.length && performance.now() < deadline) {
+      const ac = inc.ac[inc.next++];
+      inc.seen.add(ac[0]);
+      this.upsert(ac, inc.serverNow, now);
     }
+    if (inc.next < inc.ac.length) return;
     for (const [hex, plane] of this.planes) {
-      if (!seen.has(hex) && hex !== this.selectedHex) {
-        this.billboards.remove(plane.billboard);
-        this.planes.delete(hex);
-      }
+      if (!inc.seen.has(hex) && hex !== this.selectedHex) this.retire(plane);
     }
+    this.incoming = null;
     this.lastUpdate = 0; // start a fresh pass on the next frame
     this.pending = [];
+  }
+
+  private growSpare(n: number): void {
+    for (let i = 0; i < n; i++) {
+      this.spare.push(
+        this.billboards.add({
+          show: false,
+          position: Cartesian3.ZERO,
+          image: iconFor(null, ""),
+          width: ICON_PX,
+          height: ICON_PX,
+          alignedAxis: Cartesian3.UNIT_Z,
+          scaleByDistance: new NearFarScalar(2.0e5, 1.15, 1.6e7, 0.42),
+        }),
+      );
+    }
+  }
+
+  private retire(plane: Plane): void {
+    plane.billboard.show = false;
+    plane.billboard.id = undefined;
+    this.spare.push(plane.billboard);
+    this.planes.delete(plane.hex);
   }
 
   /** Merge a single aircraft (e.g. from the details endpoint of the selected one). */
@@ -138,15 +183,12 @@ export class AircraftLayer {
     const posTime = serverNow - ageS;
     let plane = this.planes.get(hex);
     if (!plane) {
-      const billboard = this.billboards.add({
-        position: Cartesian3.fromDegrees(lon, lat, this.scale.heightM(flags & FLAG_GROUND ? null : altFt)),
-        image: iconFor(category, type),
-        width: ICON_PX,
-        height: ICON_PX,
-        alignedAxis: Cartesian3.UNIT_Z,
-        scaleByDistance: new NearFarScalar(2.0e5, 1.15, 1.6e7, 0.42),
-        id: hex,
-      });
+      if (!this.spare.length) this.growSpare(1);
+      const billboard = this.spare.pop()!;
+      billboard.position = Cartesian3.fromDegrees(lon, lat, this.scale.heightM(flags & FLAG_GROUND ? null : altFt), undefined, this.scratch);
+      billboard.image = iconFor(category, type);
+      billboard.id = hex;
+      billboard.show = true;
       plane = {
         hex, lat, lon, altFt, track, gs, vrate, posTime, callsign, type, flags, category, billboard,
         stale: false, corrLat: 0, corrLon: 0, corrStart: 0, shownLat: lat, shownLon: lon,
@@ -155,11 +197,22 @@ export class AircraftLayer {
     } else {
       if (posTime < plane.posTime) return;
       // Remember where it is drawn now, and glide from there to the new estimate.
-      const [newLat, newLon] = this.extrapolate({ ...plane, lat, lon, altFt, track, gs, posTime, flags }, now);
+      const [newLat, newLon] = this.extrapolate({ lat, lon, altFt, track, gs, posTime, flags }, now);
       plane.corrLat = plane.shownLat - newLat;
       plane.corrLon = ((plane.shownLon - newLon + 540) % 360) - 180;
       plane.corrStart = now;
-      Object.assign(plane, { lat, lon, altFt, track, gs, vrate, posTime, callsign, type, flags, category });
+      if (category !== plane.category || type !== plane.type) plane.billboard.image = iconFor(category, type);
+      plane.lat = lat;
+      plane.lon = lon;
+      plane.altFt = altFt;
+      plane.track = track;
+      plane.gs = gs;
+      plane.vrate = vrate;
+      plane.posTime = posTime;
+      plane.callsign = callsign;
+      plane.type = type;
+      plane.flags = flags;
+      plane.category = category;
     }
     plane.stale = this.isStale(plane, now);
     this.style(plane);
@@ -177,8 +230,8 @@ export class AircraftLayer {
     const b = plane.billboard;
     const selected = plane.hex === this.selectedHex;
     altitudeColor(this.altOf(plane, this.clock.now()), this.color);
-    if (plane.flags & FLAG_EMERGENCY) Color.fromCssColorString("#ff3b30", this.color);
-    if (selected) Color.fromCssColorString("#ffffff", this.color);
+    if (plane.flags & FLAG_EMERGENCY) Color.clone(EMERGENCY_COLOR, this.color);
+    if (selected) Color.clone(SELECTED_COLOR, this.color);
     this.color.alpha = plane.flags & FLAG_ESTIMATED || plane.stale ? 0.45 : 1;
     b.color = this.color;
     b.scale = (selected ? 1.5 : 1) * sizeFor(plane.category);
@@ -229,12 +282,14 @@ export class AircraftLayer {
     // aircraft moves less than a pixel in several seconds, so far views get a pass every few
     // seconds, spread over several frames; close views (few aircraft) update every frame.
     const every = height > 6_000_000 ? 3000 : height > 1_500_000 ? 600 : 0;
+    const deadline = t + FRAME_BUDGET_MS;
+    if (this.incoming) this.applyIncoming(deadline);
     if (!this.pending.length && t - this.lastUpdate >= every) {
       this.lastUpdate = t;
       this.pending = [...this.planes.values()];
     }
-    const budget = every === 0 ? Infinity : PLANES_PER_FRAME;
-    for (let n = 0; this.pending.length && n < budget; n++) {
+    // Up close (few aircraft) every icon moves every frame; further out, as many as fit the budget.
+    while (this.pending.length && (every === 0 || performance.now() < deadline)) {
       this.reposition(this.pending.pop()!, now, occluder, showGround);
     }
     // The selected aircraft always moves smoothly (its label, route line and follow camera use it).
@@ -244,7 +299,7 @@ export class AircraftLayer {
   }
 
   private reposition(p: Plane, now: number, occluder: EllipsoidalOccluder, showGround: boolean): void {
-    if (!this.planes.has(p.hex)) return; // removed since the pass started
+    if (this.planes.get(p.hex) !== p) return; // removed since the pass started (its icon may be reused)
     const ground = (p.flags & FLAG_GROUND) !== 0;
     p.billboard.show = showGround || !ground || p.hex === this.selectedHex;
     if (!p.billboard.show) return;
