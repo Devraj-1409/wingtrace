@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+backend/.venv/
+backend/.env
+.pytest_cache/
+
+# Databases and downloaded reference data (rebuilt with python -m app.refdata_build)
+backend/data/
+
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+*.local
+
+# Deployment secrets
+deploy/.env
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db

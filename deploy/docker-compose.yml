@@ -1,0 +1,29 @@
+# Backend + automatic HTTPS (Caddy). See docs/DEPLOY.md.
+# Usage: copy .env.example to .env, fill it in, then:  docker compose up -d --build
+services:
+  api:
+    build: ../backend
+    restart: unless-stopped
+    environment:
+      USER_AGENT: ${USER_AGENT}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      AUTO_IMPORT: ${AUTO_IMPORT:-false}
+      RETENTION_DAYS: ${RETENTION_DAYS:-2}
+    volumes:
+      - data:/data
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+
+volumes:
+  data:
+  caddy_data:

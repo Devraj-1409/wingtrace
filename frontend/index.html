@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Live flights on a realistic 3D globe." />
+    <title>WingTrace</title>
+    <link rel="preconnect" href="https://gibs.earthdata.nasa.gov" crossorigin />
+    <link rel="preconnect" href="https://tiles.maps.eox.at" crossorigin />
+    <style>
+      /* Until the stylesheet arrives: a dark page with a loading note, never raw unstyled HTML. */
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #05070c;
+      }
+      body > :not(#boot) {
+        visibility: hidden;
+      }
+      #boot {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #05070c;
+        color: #a1a5af;
+        font: 500 14px system-ui, "Segoe UI", sans-serif;
+        transition: opacity 0.4s;
+      }
+      #boot.done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #boot img {
+        animation: boot-pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes boot-pulse {
+        50% {
+          opacity: 0.45;
+        }
+      }
+    </style>
+    <script>
+      // Where CesiumJS finds its runtime files (copied by vite.config.ts).
+      window.CESIUM_BASE_URL = new URL("cesiumStatic/", document.baseURI).href;
+    </script>
+  </head>
+  <body>
+    <div id="boot"><img src="favicon.svg" alt="" width="44" height="44" />Loading the globe…</div>
+    <div id="cesiumContainer"></div>
+
+    <aside class="panel" id="panel">
+      <header class="panel-header">
+        <button class="sheet-handle" id="sheet-handle" aria-label="Show or hide the panel"></button>
+        <div class="brand">
+          <img src="favicon.svg" alt="" width="26" height="26" />
+          <span>WingTrace</span>
+          <button class="panel-close" id="panel-close" title="Hide panel" aria-label="Hide panel">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
+          </button>
+        </div>
+        <nav class="tabs" role="tablist">
+          <button class="tab active" data-tab="live" role="tab">Live</button>
+          <button class="tab" data-tab="top" role="tab">Top 10</button>
+          <button class="tab" data-tab="about" role="tab">About</button>
+        </nav>
+      </header>
+
+      <section class="tab-body" id="tab-live">
+        <div class="search">
+          <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 3a7.5 7.5 0 0 1 5.9 12.1l4.3 4.3-1.4 1.4-4.3-4.3A7.5 7.5 0 1 1 10.5 3Zm0 2a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z"/></svg>
+          <input id="search" type="search" autocomplete="off" spellcheck="false" placeholder="Flight, registration or airport" />
+          <div class="search-results" id="search-results" hidden></div>
+        </div>
+        <div id="live-body"></div>
+      </section>
+
+      <section class="tab-body" id="tab-top" hidden>
+        <div id="top-body"></div>
+      </section>
+
+      <section class="tab-body" id="tab-about" hidden>
+        <div class="about">
+          <h2>About</h2>
+          <p class="lead">Live air traffic on a realistic 3D Earth. A free, non-commercial hobby project.</p>
+
+          <div class="section-title">How it works</div>
+          <div class="list">
+            <div class="list-row">
+              <div><div class="row-title">Live positions</div>
+              <div class="row-sub">Aircraft broadcast where they are (ADS-B). Volunteers' receivers share it as open data.</div></div>
+            </div>
+            <div class="list-row">
+              <div><div class="row-title">Routes</div>
+              <div class="row-sub">Matched by callsign from crowd-sourced data, shown only when the aircraft's position fits.</div></div>
+            </div>
+            <div class="list-row">
+              <div><div class="row-title">Estimated positions</div>
+              <div class="row-sub">Out of receiver range (usually over oceans), cruising aircraft keep moving along their route, drawn faded.</div></div>
+            </div>
+          </div>
+
+          <div class="section-title">Data</div>
+          <div class="list">
+            <a class="list-row" href="https://adsb.lol" target="_blank" rel="noopener">
+              <div><div class="row-title">adsb.lol</div><div class="row-sub">Live positions (ODbL)</div></div>
+              <svg class="ext" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+            </a>
+            <a class="list-row" href="https://adsb.fi" target="_blank" rel="noopener">
+              <div><div class="row-title">adsb.fi</div><div class="row-sub">Live positions (personal, non-commercial use)</div></div>
+              <svg class="ext" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+            </a>
+            <a class="list-row" href="https://github.com/vradarserver/standing-data" target="_blank" rel="noopener">
+              <div><div class="row-title">VRS standing data</div><div class="row-sub">Routes, airlines and aircraft types (CC0)</div></div>
+              <svg class="ext" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+            </a>
+            <a class="list-row" href="https://ourairports.com/data/" target="_blank" rel="noopener">
+              <div><div class="row-title">OurAirports</div><div class="row-sub">Airports (public domain)</div></div>
+              <svg class="ext" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+            </a>
+            <a class="list-row" href="https://earthobservatory.nasa.gov/features/NightLights" target="_blank" rel="noopener">
+              <div><div class="row-title">NASA Blue Marble and Black Marble</div><div class="row-sub">Earth by day and city lights by night, via NASA GIBS (public domain)</div></div>
+              <svg class="ext" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+            </a>
+            <a class="list-row" href="https://s2maps.eu" target="_blank" rel="noopener">
+              <div><div class="row-title">Sentinel-2 cloudless by EOX</div><div class="row-sub">Satellite map when zoomed in (CC BY-NC-SA 4.0, contains modified Copernicus Sentinel data 2024)</div></div>
+              <svg class="ext" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+            </a>
+          </div>
+
+          <div class="section-title">Built with</div>
+          <div class="list">
+            <a class="list-row" href="https://cesium.com/platform/cesiumjs/" target="_blank" rel="noopener">
+              <div><div class="row-title">CesiumJS</div><div class="row-sub">3D globe (Apache 2.0)</div></div>
+              <svg class="ext" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+            </a>
+            <a class="list-row" href="https://rsms.me/inter/" target="_blank" rel="noopener">
+              <div><div class="row-title">Inter</div><div class="row-sub">Typeface (SIL Open Font License)</div></div>
+              <svg class="ext" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+            </a>
+          </div>
+
+          <div class="section-title">Privacy</div>
+          <p class="note">
+            Aircraft whose owners have asked not to be tracked publicly (the FAA LADD list and Privacy ICAO Addresses)
+            are never shown, and military aircraft are hidden. To have an aircraft removed, contact the site owner.
+          </p>
+          <p class="note faint">
+            Not for navigation. Information may be delayed, incomplete or wrong; never use it for flight planning or
+            anything safety-related.
+          </p>
+        </div>
+      </section>
+    </aside>
+
+    <button class="panel-open" id="panel-open" title="Show panel" aria-label="Show panel" hidden>
+      <img src="favicon.svg" alt="" width="22" height="22" />
+      <span>WingTrace</span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+    </button>
+
+    <div class="status-wrap" id="status-wrap" hidden>
+      <button class="status" id="status" aria-label="Live data status"></button>
+      <div class="status-card" id="status-card" role="tooltip"></div>
+    </div>
+    <div class="alt-legend" id="alt-legend" title="Aircraft and flown routes are coloured by altitude"></div>
+
+    <div class="map-controls">
+      <button class="icon-btn" id="btn-home" title="Whole globe" aria-label="Whole globe">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z" /></svg>
+      </button>
+      <div class="zoom-group">
+        <button class="icon-btn" id="btn-zoom-in" title="Zoom in" aria-label="Zoom in">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+        <button class="icon-btn" id="btn-zoom-out" title="Zoom out" aria-label="Zoom out">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /></svg>
+        </button>
+      </div>
+      <button class="icon-btn" id="btn-settings" title="Map settings" aria-label="Map settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 12.5 9 5 9-5" /><path d="m3 17 9 5 9-5" /></svg>
+      </button>
+      <div class="popover" id="settings" hidden>
+        <h4>Altitude scale</h4>
+        <div class="segmented" id="alt-scale">
+          <button data-value="auto" class="active">Auto</button>
+          <button data-value="1">True</button>
+          <button data-value="5">5×</button>
+          <button data-value="10">10×</button>
+          <button data-value="20">20×</button>
+        </div>
+        <p class="hint">Auto shows true altitude up close and lifts routes as you zoom out.</p>
+        <h4>Map</h4>
+        <label class="switch"><input type="checkbox" id="opt-labels" checked /><span>Place names</span></label>
+      </div>
+    </div>
+
+    <div class="credits" id="credits"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
