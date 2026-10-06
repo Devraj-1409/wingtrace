@@ -15,7 +15,12 @@ services:
     buildFilter:
       paths:
         - backend/**
+        - render.yaml
     envVars:
+      # Experiment: only fetch what visitors are looking at (no world sweep), to stay under the
+      # data sources' limits on Render's shared address.
+      - key: GLOBAL_SWEEP
+        value: "false"
       - key: CORS_ORIGINS
         value: https://devraj-1409.github.io
       - key: USER_AGENT
