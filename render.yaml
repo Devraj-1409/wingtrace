@@ -1,0 +1,22 @@
+# Free hosting for the WingTrace backend on Render (no card needed):
+# render.com → sign in with GitHub → New → Blueprint → pick this repository → Apply.
+# The free plan sleeps after 15 minutes without visitors and takes about a minute to wake up.
+services:
+  - type: web
+    name: wingtrace-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    # Only rebuild the server when its code changes, not for website-only changes.
+    buildFilter:
+      paths:
+        - backend/**
+    envVars:
+      - key: CORS_ORIGINS
+        value: https://devraj-1409.github.io
+      - key: USER_AGENT
+        value: wingtrace/0.1 (+https://github.com/Devraj-1409/wingtrace)

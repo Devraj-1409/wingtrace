@@ -11,7 +11,19 @@ Without a backend, the GitHub Pages site shows the globe but no aircraft.
 
 ## Backend: pick one
 
-### A. Free cloud VM (always on, recommended)
+### A. Render free plan (no card needed)
+
+1. Sign in to [render.com](https://render.com) with GitHub.
+2. **New → Blueprint**, pick this repository, **Apply**. `render.yaml` sets everything up: the
+   backend in Singapore on the free plan, allowed to answer the GitHub Pages site.
+3. Put the service's address (e.g. `https://wingtrace-api.onrender.com`) in
+   `frontend/.env.production` as `VITE_API_BASE`, and push.
+
+The free plan (512 MB, 0.1 CPU) sleeps after 15 minutes without visitors. The next visitor waits about
+a minute while it wakes (the site says so), then planes fill in over a couple of minutes. Its disk
+is wiped on each wake, so flown paths start fresh.
+
+### B. Free cloud VM (always on; free tiers usually need a card)
 
 1. Create a small Linux VM on a free tier (for example Oracle Cloud "Always Free"; free tiers change,
    so check the current terms). Open ports 80 and 443.
@@ -28,7 +40,7 @@ Without a backend, the GitHub Pages site shows the globe but no aircraft.
    Caddy gets an HTTPS certificate automatically. Check `https://<API_DOMAIN>/api/health`.
 4. Disk: well under 1 GB (routes and airports, plus two days of flight paths).
 
-### B. Your own PC (free, only online while it's on)
+### C. Your own PC (free, only online while it's on)
 
 Run the backend (`start.cmd`), and expose it with a free
 [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/).
@@ -40,8 +52,7 @@ URL. Set `CORS_ORIGINS` to your GitHub Pages address.
 
 1. Push the repository to GitHub (it must be public for free GitHub Pages).
 2. Repository **Settings → Pages → Source: GitHub Actions**.
-3. **Settings → Secrets and variables → Actions → Variables**, add `VITE_API_BASE`: your backend URL,
-   e.g. `https://wingtrace.duckdns.org`.
+3. Set `VITE_API_BASE` in `frontend/.env.production` to your backend's address.
 4. Push to `main` (or run the "Deploy site to GitHub Pages" workflow). The site appears at
    `https://<user>.github.io/<repo>/`.
 

@@ -12,7 +12,7 @@ import "cesium/Build/Cesium/Widgets/widgets.css";
 import "./style.css";
 import { AircraftLayer } from "./aircraftLayer";
 import { AltitudeScale, altitudeCss, type AltitudeMode } from "./altitude";
-import { api, ApiError } from "./api";
+import { api, ApiError, REMOTE_BACKEND } from "./api";
 import { fmtAgo, fmtDuration, fmtInt } from "./format";
 import { LivePanel } from "./livePanel";
 import { LivePoller } from "./livePoller";
@@ -33,6 +33,7 @@ const routes = new RouteLayer(viewer, scale);
 
 // ---------- State ----------
 
+const pageOpenedAt = Date.now();
 let lastLive: LiveResponse | null = null;
 let lastLiveAt = 0;
 let lastInView = false;
@@ -138,6 +139,14 @@ function updateStatus(): void {
   const pill = $("#status");
   const card = $("#status-card");
   $("#status-wrap").hidden = false;
+  const waitedMs = Date.now() - pageOpenedAt;
+  // The hosted data server is on a free plan that sleeps when nobody's watching.
+  if (!lastLive && REMOTE_BACKEND && waitedMs > 4000 && waitedMs < 180_000) {
+    pill.innerHTML = `<span class="dot warn"></span>Waking up…`;
+    card.innerHTML = `<div class="status-title">Waking up the flight data server</div>
+      <p>It sleeps when nobody's watching (free hosting) and takes about a minute to start. Planes then fill in over a couple of minutes.</p>`;
+    return;
+  }
   if (liveError && !lastLive) {
     pill.innerHTML = `<span class="dot off"></span>Offline`;
     card.innerHTML = `<div class="status-title">Can't reach the flight data server</div>

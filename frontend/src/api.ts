@@ -17,6 +17,8 @@ export class ApiError extends Error {
 
 /** Where the backend lives. Empty: same origin (development, or backend serving the site). */
 const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
+/** True when the backend is hosted separately (e.g. the website on GitHub Pages). */
+export const REMOTE_BACKEND = API_BASE !== "";
 
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(API_BASE + path, { signal });
