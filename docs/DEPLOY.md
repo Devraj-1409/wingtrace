@@ -17,7 +17,7 @@ Without a backend, the GitHub Pages site shows the globe but no aircraft.
 2. **New → Blueprint**, pick this repository, **Apply**. `render.yaml` sets everything up: the
    backend in Singapore on the free plan, allowed to answer the GitHub Pages site.
 3. Put the service's address (e.g. `https://wingtrace-api.onrender.com`) in
-   `frontend/.env.production` as `VITE_API_BASE`, and push.
+   `frontend/.env.pages` as `VITE_API_BASE`, and push.
 
 The free plan (512 MB, 0.1 CPU) sleeps after 15 minutes without visitors. The next visitor waits about
 a minute while it wakes (the site says so), then planes fill in over a couple of minutes. Its disk
@@ -52,7 +52,7 @@ URL. Set `CORS_ORIGINS` to your GitHub Pages address.
 
 1. Push the repository to GitHub (it must be public for free GitHub Pages).
 2. Repository **Settings → Pages → Source: GitHub Actions**.
-3. Set `VITE_API_BASE` in `frontend/.env.production` to your backend's address.
+3. Set `VITE_API_BASE` in `frontend/.env.pages` to your backend's address.
 4. Push to `main` (or run the "Deploy site to GitHub Pages" workflow). The site appears at
    `https://<user>.github.io/<repo>/`.
 

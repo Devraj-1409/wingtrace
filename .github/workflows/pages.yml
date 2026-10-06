@@ -1,5 +1,5 @@
 # Builds the frontend and publishes it to GitHub Pages.
-# The backend's address comes from frontend/.env.production (VITE_API_BASE).
+# The backend's address comes from frontend/.env.pages (VITE_API_BASE).
 name: Deploy site to GitHub Pages
 
 on:
@@ -31,7 +31,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-      - run: npm run build
+      - run: npm run build:pages
       - uses: actions/upload-pages-artifact@v3
         with:
           path: frontend/dist
